@@ -361,6 +361,12 @@ def render_rays(ray_batch,
     intersections = b_line_sphere_intersection(R, rays_o, rays_d)
     mu, sigma = gaussian_nn.forward(intersections)
 
+    N_additional_samples = 3 
+    mu_expanded = mu.expand(-1, N_additional_samples)
+    sigma_expanded = sigma.expand(-1, N_additional_samples)
+
+    dist_samples = torch.normal(mu_expanded, sigma_expanded)
+
     viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
     bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
     near, far = bounds[...,0], bounds[...,1] # [-1,1]
