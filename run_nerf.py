@@ -24,7 +24,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from line_sphere_intersection_formula import b_line_sphere_intersection
 from nn_mu_sigma import MuSigmaNN
-R = 2
+R = 1
 gaussian_nn = MuSigmaNN().to(device)
 
 np.random.seed(0)
@@ -359,13 +359,17 @@ def render_rays(ray_batch,
     rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
 
     intersections = b_line_sphere_intersection(R, rays_o, rays_d)
+    print(f"{intersections.shape=}")
     mu, sigma = gaussian_nn.forward(intersections)
-
-    N_additional_samples = 3 
+    print(f"{mu.shape=}")
+    print(f"{sigma.shape=}")
+    N_additional_samples = 5 
     mu_expanded = mu.expand(-1, N_additional_samples)
     sigma_expanded = sigma.expand(-1, N_additional_samples)
-
-    dist_samples = torch.normal(mu_expanded, sigma_expanded)
+    print(f"{mu_expanded.shape=}")
+    print(f"{sigma_expanded.shape=}")
+    gaussian_samples = torch.normal(mu_expanded, sigma_expanded)
+    print(f"{gaussian_samples.shape=}")
 
     viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
     bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
@@ -396,10 +400,17 @@ def render_rays(ray_batch,
         z_vals = lower + (upper - lower) * t_rand
 
     # Samplowanie
+    print(f"{rays_o.shape=}")
+    print(f"{rays_d.shape=}")
+    print(f"{z_vals.shape=}")
+
     pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
-
-
+    gaussian_pts = rays_o[...,None,:] + rays_d[...,None,:] * gaussian_samples[...,:,None] # [N_rays, N_samples, 3]
+    print(f"{gaussian_pts.shape=}")
+    all_pts = torch.cat((pts, gaussian_pts), dim=1)
+    print(f"{all_pts.shape=}")
 #     raw = run_network(pts)
+
     raw = network_query_fn(pts, viewdirs, network_fn)
     rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
