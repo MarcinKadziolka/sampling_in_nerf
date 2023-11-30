@@ -18,9 +18,15 @@ from load_deepvoxels import load_dv_data
 from load_blender import load_blender_data
 from load_LINEMOD import load_LINEMOD_data
 
-from line_sphere_intersection_formula import b_line_sphere_intersection
+
 torch.cuda.empty_cache()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+from line_sphere_intersection_formula import b_line_sphere_intersection
+from nn_mu_sigma import MuSigmaNN
+R = 2
+gaussian_nn = MuSigmaNN().to(device)
+
 np.random.seed(0)
 DEBUG = False
 
@@ -352,16 +358,8 @@ def render_rays(ray_batch,
     N_rays = ray_batch.shape[0]
     rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
 
-    # print(f"{rays_o.shape=}")
-    # print(f"{rays_d.shape=}")
-    output = b_line_sphere_intersection(2, rays_o, rays_d)
-    # print(f"{output.shape=}")
-    # print(f"{output.tolist()=}")
-    # print(torch.isnan(output).tolist())
-    print("Check nan")
-    if any([any(x) for x in torch.isnan(output).tolist()]):
-        print("NAN in output")
-        return
+    intersections = b_line_sphere_intersection(R, rays_o, rays_d)
+    mu, sigma = gaussian_nn.forward(intersections)
 
     viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
     bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
