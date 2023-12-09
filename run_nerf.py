@@ -24,7 +24,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from line_sphere_intersection_formula import b_line_sphere_intersection
 from nn_mu_sigma import MuSigmaNN
-R = 1
+R = 2 
 gaussian_nn = MuSigmaNN().to(device)
 
 np.random.seed(0)
@@ -36,6 +36,7 @@ def batchify(fn, chunk):
     """
     if chunk is None:
         return fn
+    # FORWARD OF MODEL
     def ret(inputs):
         return torch.cat([fn(inputs[i:i+chunk]) for i in range(0, inputs.shape[0], chunk)], 0)
     return ret
@@ -186,18 +187,21 @@ def create_nerf(args):
     """Instantiate NeRF's MLP model.
     """
     embed_fn, input_ch = get_embedder(args.multires, args.i_embed)
-
     input_ch_views = 0
     embeddirs_fn = None
     if args.use_viewdirs:
         embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args.i_embed)
     output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
+
+    # Why is input_ch = 63 
+    # where this model uses forward?
     model = NeRF(D=args.netdepth, W=args.netwidth,
                  input_ch=input_ch, output_ch=output_ch, skips=skips,
                  input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs).to(device)
     grad_vars = list(model.parameters())
-
+    print("MODEL \n\n")
+    print(model)
     model_fine = None
     if args.N_importance > 0:
         model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
@@ -359,13 +363,16 @@ def render_rays(ray_batch,
     rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
 
     intersections = b_line_sphere_intersection(R, rays_o, rays_d)
+    coordinates = 
+
+
     print(f"{intersections.shape=}")
     mu, sigma = gaussian_nn.forward(intersections)
     print(f"{mu.shape=}")
     print(f"{sigma.shape=}")
-    N_additional_samples = 5 
-    mu_expanded = mu.expand(-1, N_additional_samples)
-    sigma_expanded = sigma.expand(-1, N_additional_samples)
+    N_gaussian_samples = 5 
+    mu_expanded = mu.expand(-1, N_gaussian_samples)
+    sigma_expanded = sigma.expand(-1, N_gaussian_samples)
     print(f"{mu_expanded.shape=}")
     print(f"{sigma_expanded.shape=}")
     gaussian_samples = torch.normal(mu_expanded, sigma_expanded)
@@ -400,17 +407,12 @@ def render_rays(ray_batch,
         z_vals = lower + (upper - lower) * t_rand
 
     # Samplowanie
-    print(f"{rays_o.shape=}")
-    print(f"{rays_d.shape=}")
-    print(f"{z_vals.shape=}")
 
     pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
     gaussian_pts = rays_o[...,None,:] + rays_d[...,None,:] * gaussian_samples[...,:,None] # [N_rays, N_samples, 3]
-    print(f"{gaussian_pts.shape=}")
     all_pts = torch.cat((pts, gaussian_pts), dim=1)
-    print(f"{all_pts.shape=}")
 #     raw = run_network(pts)
-
+    print(f"{pts.shape=}")
     raw = network_query_fn(pts, viewdirs, network_fn)
     rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
@@ -564,7 +566,6 @@ def train():
 
     parser = config_parser()
     args = parser.parse_args()
-
     # Load data
     K = None
     if args.dataset_type == 'llff':
@@ -666,6 +667,7 @@ def train():
             file.write(open(args.config, 'r').read())
 
     # Create nerf model
+    print(args)
     render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
     global_step = start
 
