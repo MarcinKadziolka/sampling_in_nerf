@@ -1,6 +1,6 @@
 import pytest
 import torch
-from line_sphere_intersection_formula import line_sphere_intersection, batched_line_sphere_intersection, get_intersection_coordinates 
+from line_sphere_intersection_formula import line_sphere_intersection, batched_line_sphere_intersection, intersection_coordinates 
 
 class TestLineSphereIntersection:
     def test_vertical_line_through_center(self):
@@ -66,4 +66,18 @@ class TestBatchedLineSphereIntersection:
         r = 2
         expected_output = torch.tensor([[2., 2.], [4, 6], [2, 4]])
         actual_output = batched_line_sphere_intersection(r, b_o, b_u)
+        assert torch.equal(expected_output, actual_output)
+
+class TestIntersectionCoordinates:
+    def test_single_axis_origin_direction(self):
+        o = torch.tensor([[-8, 0, 0], [0, 12, 0], [0, 0, 6]])
+        u = torch.tensor([[2, 0, 0], [0, -2, 0], [0, 0, -1]])
+        r = 2
+        d = torch.tensor([[3, 5], [5, 7], [4, 8]])
+        expected_output = torch.tensor([
+            [[-2, 0, 0], [2, 0, 0]], 
+            [[0, 2, 0], [0, -2, 0]], 
+            [[0, 0, 2], [0, 0, -2]]
+            ])
+        actual_output = intersection_coordinates(o, u, d) 
         assert torch.equal(expected_output, actual_output)
