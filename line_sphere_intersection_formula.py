@@ -49,8 +49,8 @@ def batched_line_sphere_intersection(r, o, u):
     return torch.stack(points, dim=-1)
 
 def intersection_coordinates(o, u, d):
-    intersection_p1 = o + u[:, 0].view(-1, 1) * d
-    intersection_p2 = o + u[:, 1].view(-1, 1) * d
+    intersection_p1 = o + d[:, 0].view(-1, 1) * u
+    intersection_p2 = o + d[:, 1].view(-1, 1) * u
 
     intersection_points = torch.stack((intersection_p1, intersection_p2), dim=1)
     return intersection_points
