@@ -22,7 +22,7 @@ from load_LINEMOD import load_LINEMOD_data
 torch.cuda.empty_cache()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-from line_sphere_intersection_formula import b_line_sphere_intersection
+from line_sphere_intersection_formula import batched_line_sphere_intersection, intersection_coordinates
 from nn_mu_sigma import MuSigmaNN
 R = 2 
 gaussian_nn = MuSigmaNN().to(device)
@@ -296,7 +296,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=F
             np.random.seed(0)
             noise = np.random.rand(*list(raw[...,3].shape)) * raw_noise_std
             noise = torch.Tensor(noise)
-
+ 
     alpha = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
     # weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
     weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1.-alpha + 1e-10], -1), -1)[:, :-1]
@@ -358,21 +358,13 @@ def render_rays(ray_batch,
     N_rays = ray_batch.shape[0]
     rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
 
-    intersections = b_line_sphere_intersection(R, rays_o, rays_d)
-    coordinates = 
-
-
-    print(f"{intersections.shape=}")
-    mu, sigma = gaussian_nn.forward(intersections)
-    print(f"{mu.shape=}")
-    print(f"{sigma.shape=}")
-    N_gaussian_samples = 5 
+    intersections =  batched_line_sphere_intersection(R, rays_o, rays_d)
+    coordinates = intersection_coordinates(rays_o, rays_d, intersections)
+    mu, sigma = gaussian_nn.forward(coordinates)
+    N_gaussian_samples = 64 
     mu_expanded = mu.expand(-1, N_gaussian_samples)
     sigma_expanded = sigma.expand(-1, N_gaussian_samples)
-    print(f"{mu_expanded.shape=}")
-    print(f"{sigma_expanded.shape=}")
     gaussian_samples = torch.normal(mu_expanded, sigma_expanded)
-    print(f"{gaussian_samples.shape=}")
 
     viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
     bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
@@ -385,6 +377,7 @@ def render_rays(ray_batch,
         z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
 
     z_vals = z_vals.expand([N_rays, N_samples])
+    z_vals = torch.cat((z_vals, gaussian_samples), dim=1)
 
     if perturb > 0.:
         # get intervals between samples
@@ -402,13 +395,8 @@ def render_rays(ray_batch,
 
         z_vals = lower + (upper - lower) * t_rand
 
-    # Samplowanie
-
     pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
-    gaussian_pts = rays_o[...,None,:] + rays_d[...,None,:] * gaussian_samples[...,:,None] # [N_rays, N_samples, 3]
-    all_pts = torch.cat((pts, gaussian_pts), dim=1)
 #     raw = run_network(pts)
-    print(f"{pts.shape=}")
     raw = network_query_fn(pts, viewdirs, network_fn)
     rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
