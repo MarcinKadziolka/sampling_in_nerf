@@ -358,14 +358,6 @@ def render_rays(ray_batch,
     N_rays = ray_batch.shape[0]
     rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
 
-    intersections =  batched_line_sphere_intersection(R, rays_o, rays_d)
-    coordinates = intersection_coordinates(rays_o, rays_d, intersections)
-    mu, sigma = gaussian_nn.forward(coordinates)
-    N_gaussian_samples = 64 
-    mu_expanded = mu.expand(-1, N_gaussian_samples)
-    sigma_expanded = sigma.expand(-1, N_gaussian_samples)
-    gaussian_samples = torch.normal(mu_expanded, sigma_expanded)
-
     viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
     bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
     near, far = bounds[...,0], bounds[...,1] # [-1,1]
@@ -377,7 +369,6 @@ def render_rays(ray_batch,
         z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
 
     z_vals = z_vals.expand([N_rays, N_samples])
-    z_vals = torch.cat((z_vals, gaussian_samples), dim=1)
 
     if perturb > 0.:
         # get intervals between samples
@@ -407,6 +398,16 @@ def render_rays(ray_batch,
         z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
         z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
         z_samples = z_samples.detach()
+
+        intersections = batched_line_sphere_intersection(R, rays_o, rays_d)
+        coordinates = intersection_coordinates(rays_o, rays_d, intersections)
+        mu, sigma = gaussian_nn.forward(coordinates)
+        N_gaussian_samples = 64
+        mu_expanded = mu.expand(-1, N_gaussian_samples)
+        sigma_expanded = sigma.expand(-1, N_gaussian_samples)
+        gaussian_samples = torch.normal(mu_expanded, sigma_expanded)
+        gaussian_samples[0][0] = 0
+        z_vals = torch.cat((z_vals, gaussian_samples), dim=1)
 
         z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
         pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
@@ -780,6 +781,9 @@ def train():
         img_loss = img2mse(rgb, target_s)
         trans = extras['raw'][...,-1]
         loss = img_loss
+        if loss == torch.nan:
+            print("asdf")
+            print("asdf")
         psnr = mse2psnr(img_loss)
 
         if 'rgb0' in extras:
